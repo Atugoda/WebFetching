@@ -1,85 +1,88 @@
-
 import java.io.*;
 import java.net.*;
-import java.util.regex.*;
-import java.util.*;
+import java.util.HashSet;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class WebPageFetcherWithLinks {
+    private static final Pattern LINK_PATTERN = Pattern.compile("href=\"(http[^\"]+)\"");
+
+    private static Set<String> visitedUrls = new HashSet<>();
 
     public static void main(String[] args) {
         if (args.length != 1) {
-            System.out.println("Usage: java WebPageFetcherWithLinks <url>");
+            System.out.println("Usage: java WebSpiderEnhanced <url>");
             return;
         }
 
-        String urlStr = args[0];
-        try {
-            // Set proxy information (Update with your proxy details)
-            System.setProperty("http.proxyHost", "");
-            System.setProperty("http.proxyPort", "8080");
+        String startingUrl = args[0];
 
-            URL url = new URL(urlStr);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection(Proxy.NO_PROXY);
-
-            int responseCode = connection.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
-                StringBuilder content = new StringBuilder();
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    content.append(line).append("\n");
-                }
-                reader.close();
-
-                // Extract links using regular expression
-                String regex = "<a\\s+href\\s*=\\s*\"([^\"]+)\"";
-                Pattern pattern = Pattern.compile(regex);
-                Matcher matcher = pattern.matcher(content.toString());
-
-                Set<String> links = new HashSet<>();
-                while (matcher.find()) {
-                    links.add(matcher.group(1));
-                }
-
-                // Download linked web pages
-                String basePath = "downloaded_pages/";
-                for (String link : links) {
-                    downloadWebPage(link, basePath);
-                }
-
-                System.out.println("Downloaded " + links.size() + " linked web pages.");
-            } else {
-                System.out.println("Failed to fetch the web page. Response code: " + responseCode);
-            }
-        } catch (IOException e) {
-            System.out.println("An error occurred: " + e.getMessage());
-        }
+        crawlAndDownload(startingUrl);
     }
 
-    private static void downloadWebPage(String link, String basePath) throws IOException {
-        URL url = new URL(link);
-        String fileName = link.replaceAll("[^a-zA-Z0-9.-]", "_");
-        File file = new File(basePath + fileName + ".html");
+    private static void crawlAndDownload(String url) {
+        if (visitedUrls.contains(url)) {
+            return;
+        }
 
-        HttpURLConnection connection = (HttpURLConnection) url.openConnection(Proxy.NO_PROXY);
-        int responseCode = connection.getResponseCode();
-        if (responseCode == HttpURLConnection.HTTP_OK) {
+        visitedUrls.add(url);
+
+        try {
+            URL webpageUrl = new URL(url);
+            HttpURLConnection connection = (HttpURLConnection) webpageUrl.openConnection();
+
             BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
             StringBuilder content = new StringBuilder();
             String line;
             while ((line = reader.readLine()) != null) {
-                content.append(line).append("\n");
+                content.append(line);
+                content.append(System.lineSeparator());
+
+                Matcher matcher = LINK_PATTERN.matcher(line);
+                while (matcher.find()) {
+                    String linkedUrl = matcher.group(1);
+                    System.out.println("Found link: " + linkedUrl);
+                    downloadAndSave(linkedUrl);
+                    crawlAndDownload(linkedUrl);
+                }
             }
             reader.close();
 
-            // Save content to file
-            FileWriter fileWriter = new FileWriter(file);
-            fileWriter.write(content.toString());
-            fileWriter.close();
-
-            System.out.println("Downloaded: " + fileName + ".html");
-        } else {
-            System.out.println("Failed to download: " + fileName + ".html. Response code: " + responseCode);
+            connection.disconnect();
+        } catch (IOException e) {
+            e.printStackTrace();
         }
     }
+
+    private static void downloadAndSave(String url) {
+        try {
+            URL webpageUrl = new URL(url);
+            HttpURLConnection connection = (HttpURLConnection) webpageUrl.openConnection();
+
+            BufferedReader reader = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder content = new StringBuilder();
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line);
+                content.append(System.lineSeparator());
+            }
+            reader.close();
+
+            connection.disconnect();
+
+            String fileName = getFileNameFromUrl(url);
+            try (BufferedWriter writer = new BufferedWriter(new FileWriter(fileName))) {
+                writer.write(content.toString());
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private static String getFileNameFromUrl(String url) {
+        String[] parts = url.split("/");
+        return parts[parts.length - 1];
+    }
 }
+
